@@ -1,0 +1,82 @@
+name: Build APK and publish "latest" release
+permissions:
+  contents: write
+
+on:
+  push:
+    branches:
+      - '**'   # runs on every push (all branches)
+
+jobs:
+  build-and-publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 11
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '11'
+
+      - name: Make Gradle wrapper executable
+        run: chmod +x ./gradlew
+
+      - name: Set up Android SDK (API 33)
+        uses: android-actions/setup-android@v2
+        with:
+          api-level: 33
+          components: build-tools;33.0.2,platforms;android-33,platform-tools
+
+      - name: Cache Gradle packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
+
+      # Optional: decode keystore if you want to sign the APK in CI.
+      # Add secrets: ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS, ANDROID_KEY_PASSWORD
+      - name: Decode keystore (optional)
+        if: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
+        env:
+          KEY_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          echo "$KEY_B64" | base64 --decode > release.keystore
+
+      - name: Create keystore properties (optional)
+        if: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
+        run: |
+          cat > keystore.properties <<EOF
+          storeFile=release.keystore
+          storePassword=${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          keyAlias=${{ secrets.ANDROID_KEY_ALIAS }}
+          keyPassword=${{ secrets.ANDROID_KEY_PASSWORD }}
+          EOF
+
+      - name: Build release APK
+        run: ./gradlew assembleRelease --no-daemon --stacktrace
+
+      - name: List APKs (debug)
+        run: ls -R app/build/outputs/apk || true
+
+      - name: Create or update release and upload APK(s)
+        uses: ncipollo/release-action@v1
+        with:
+          tag: latest
+          name: Latest
+          body: "Automated build from ${{ github.sha }} (ref: ${{ github.ref }})"
+          files: |
+            app/build/outputs/apk/**/*.apk
+          overwrite: true
+
+# Notes:
+# - Trigger: runs on every push across all branches. Change on.push.branches if you want to limit triggers.
+# - This creates/updates a release with tag "latest" and uploads matching APK files.
+# - For signed APKs, add keystore secrets and ensure your Gradle build reads keystore.properties.
+# - Adjust module path or assemble task if your project differs (e.g., :app:assembleRelease or different module name).
+# - If you want concurrency or additional environment caching, tell me and I can update the workflow.
