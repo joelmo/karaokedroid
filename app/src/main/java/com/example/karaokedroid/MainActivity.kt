@@ -379,134 +379,213 @@ fun KaraokeAppScreen(
                         }
 
                         val customTitle = "Loaded Audio (${decodedWavFile.nameWithoutExtension.takeLast(6)})"
+                        val cacheDir = StemCacheManager.getCacheDir(outputDir)
+                        val cachedResult = StemCacheManager.getCachedStems(decodedWavFile, separationMethod, cacheDir)
 
-                        if (separationMethod == "BS-RoFormer Model") {
-                            // BS-RoFormer vocal separation
-                            val separation = BsRoFormerVocalSeparator.separateWithBsRoFormer(decodedWavFile, outputDir) { progressUpdate ->
-                                Handler(Looper.getMainLooper()).post {
-                                    separationProgress = progressUpdate.progress
-                                    separationStep = progressUpdate.step
-                                    separationLog = progressUpdate.logLine
-                                }
-                            }
-
-                            val customSong = Song(
-                                id = "custom_${System.currentTimeMillis()}",
-                                title = customTitle,
-                                artist = "BS-RoFormer Separated Audio",
-                                assetPath = null,
-                                durationMs = duration,
-                                lyrics = listOf(
-                                    LyricLine(0L, duration / 3, "🎵 Custom BS-RoFormer Song Loaded! 🎵"),
-                                    LyricLine(duration / 3, 2 * duration / 3, "🤖 Vocal Separation BS-RoFormer model complete! 🤖"),
-                                    LyricLine(2 * duration / 3, duration, "✨ Enjoy singing along! ✨")
-                                ),
-                                isCustom = true,
-                                customFile = decodedWavFile,
-                                instrumentalFile = separation.instrumentalFile,
-                                vocalFile = separation.vocalFile
-                            )
-
-                            Handler(Looper.getMainLooper()).post {
-                                isSeparating = false
-                                onAddCustomSong(customSong)
-                                Toast.makeText(context, "Successfully separated vocals using BS-RoFormer model!", Toast.LENGTH_LONG).show()
-                            }
-                        } else if (separationMethod == "Moises-Light Model") {
-                            // Moises-Light vocal separation
-                            val separation = MoisesLightVocalSeparator.separateWithMoisesLight(decodedWavFile, outputDir) { progressUpdate ->
-                                Handler(Looper.getMainLooper()).post {
-                                    separationProgress = progressUpdate.progress
-                                    separationStep = progressUpdate.step
-                                    separationLog = progressUpdate.logLine
-                                }
-                            }
-
-                            val customSong = Song(
-                                id = "custom_${System.currentTimeMillis()}",
-                                title = customTitle,
-                                artist = "Moises-Light Separated Audio",
-                                assetPath = null,
-                                durationMs = duration,
-                                lyrics = listOf(
-                                    LyricLine(0L, duration / 3, "🎵 Custom Moises-Light Song Loaded! 🎵"),
-                                    LyricLine(duration / 3, 2 * duration / 3, "🤖 Vocal Separation Moises-Light model complete! 🤖"),
-                                    LyricLine(2 * duration / 3, duration, "✨ Enjoy singing along! ✨")
-                                ),
-                                isCustom = true,
-                                customFile = decodedWavFile,
-                                instrumentalFile = separation.instrumentalFile,
-                                vocalFile = separation.vocalFile
-                            )
-
-                            Handler(Looper.getMainLooper()).post {
-                                isSeparating = false
-                                onAddCustomSong(customSong)
-                                Toast.makeText(context, "Successfully separated vocals using Moises-Light model!", Toast.LENGTH_LONG).show()
-                            }
-                        } else if (separationMethod == "Meta Demucs Model") {
-                            // Demucs vocal separation
-                            val separation = DemucsVocalSeparator.separateWithDemucs(decodedWavFile, outputDir) { progressUpdate ->
-                                Handler(Looper.getMainLooper()).post {
-                                    separationProgress = progressUpdate.progress
-                                    separationStep = progressUpdate.step
-                                    separationLog = progressUpdate.logLine
-                                }
-                            }
-
-                            val customSong = Song(
-                                id = "custom_${System.currentTimeMillis()}",
-                                title = customTitle,
-                                artist = "Demucs Separated Audio",
-                                assetPath = null,
-                                durationMs = duration,
-                                lyrics = listOf(
-                                    LyricLine(0L, duration / 3, "🎵 Custom Demucs Song Loaded! 🎵"),
-                                    LyricLine(duration / 3, 2 * duration / 3, "🤖 Vocal Separation Meta Demucs model complete! 🤖"),
-                                    LyricLine(2 * duration / 3, duration, "✨ Enjoy singing along! ✨")
-                                ),
-                                isCustom = true,
-                                customFile = decodedWavFile,
-                                instrumentalFile = separation.instrumentalFile,
-                                vocalFile = separation.vocalFile
-                            )
-
-                            Handler(Looper.getMainLooper()).post {
-                                isSeparating = false
-                                onAddCustomSong(customSong)
-                                Toast.makeText(context, "Successfully separated vocals using Demucs model!", Toast.LENGTH_LONG).show()
-                            }
-                        } else {
-                            // Traditional DSP separation
+                        if (cachedResult != null) {
                             Handler(Looper.getMainLooper()).post {
                                 separationProgress = 0.5f
-                                separationStep = "Traditional DSP"
-                                separationLog = "Applying channel cancellation (L - R) / vocal extraction ((L+R)/2)..."
+                                separationStep = "Stem Cache Hit"
+                                separationLog = "Found pre-separated stems in cache! Loading..."
                             }
-
-                            val separation = VocalSeparator.separate(decodedWavFile, outputDir)
+                            Thread.sleep(300)
+                            Handler(Looper.getMainLooper()).post {
+                                separationProgress = 1.0f
+                                separationStep = "Completed"
+                                separationLog = "Successfully loaded stems from cache!"
+                            }
+                            Thread.sleep(200)
 
                             val customSong = Song(
                                 id = "custom_${System.currentTimeMillis()}",
                                 title = customTitle,
-                                artist = "DSP Separated Audio",
+                                artist = "$separationMethod (Cached)",
                                 assetPath = null,
                                 durationMs = duration,
                                 lyrics = listOf(
-                                    LyricLine(0L, duration / 3, "🎵 Custom DSP Song Loaded! 🎵"),
-                                    LyricLine(duration / 3, 2 * duration / 3, "🎤 Vocal Separation DSP complete! 🎤"),
-                                    LyricLine(2 * duration / 3, duration, "✨ Sing with separated backing track! ✨")
+                                    LyricLine(0L, duration / 3, "🎵 Custom Cached Song Loaded! 🎵"),
+                                    LyricLine(duration / 3, 2 * duration / 3, "⚡ Loaded lightning-fast from stem cache! ⚡"),
+                                    LyricLine(2 * duration / 3, duration, "✨ Enjoy singing along! ✨")
                                 ),
                                 isCustom = true,
                                 customFile = decodedWavFile,
-                                instrumentalFile = separation.instrumentalFile,
-                                vocalFile = separation.vocalFile
+                                instrumentalFile = cachedResult.instrumentalFile,
+                                vocalFile = cachedResult.vocalFile
                             )
 
                             Handler(Looper.getMainLooper()).post {
                                 isSeparating = false
                                 onAddCustomSong(customSong)
-                                Toast.makeText(context, "Successfully separated vocals using DSP algorithm!", Toast.LENGTH_LONG).show()
+                                Toast.makeText(context, "Successfully loaded cached $separationMethod stems!", Toast.LENGTH_LONG).show()
+                            }
+                        } else {
+                            if (separationMethod == "BS-RoFormer Model") {
+                                // BS-RoFormer vocal separation
+                                val separation = BsRoFormerVocalSeparator.separateWithBsRoFormer(decodedWavFile, outputDir) { progressUpdate ->
+                                    Handler(Looper.getMainLooper()).post {
+                                        separationProgress = progressUpdate.progress
+                                        separationStep = progressUpdate.step
+                                        separationLog = progressUpdate.logLine
+                                    }
+                                }
+                                val cachedStems = StemCacheManager.cacheStems(decodedWavFile, separationMethod, separation, cacheDir)
+
+                                val customSong = Song(
+                                    id = "custom_${System.currentTimeMillis()}",
+                                    title = customTitle,
+                                    artist = "BS-RoFormer Separated Audio",
+                                    assetPath = null,
+                                    durationMs = duration,
+                                    lyrics = listOf(
+                                        LyricLine(0L, duration / 3, "🎵 Custom BS-RoFormer Song Loaded! 🎵"),
+                                        LyricLine(duration / 3, 2 * duration / 3, "🤖 Vocal Separation BS-RoFormer model complete! 🤖"),
+                                        LyricLine(2 * duration / 3, duration, "✨ Enjoy singing along! ✨")
+                                    ),
+                                    isCustom = true,
+                                    customFile = decodedWavFile,
+                                    instrumentalFile = cachedStems.instrumentalFile,
+                                    vocalFile = cachedStems.vocalFile
+                                )
+
+                                Handler(Looper.getMainLooper()).post {
+                                    isSeparating = false
+                                    onAddCustomSong(customSong)
+                                    Toast.makeText(context, "Successfully separated vocals using BS-RoFormer model!", Toast.LENGTH_LONG).show()
+                                }
+                            } else if (separationMethod == "Moises-Light Model") {
+                                // Moises-Light vocal separation
+                                val separation = MoisesLightVocalSeparator.separateWithMoisesLight(decodedWavFile, outputDir) { progressUpdate ->
+                                    Handler(Looper.getMainLooper()).post {
+                                        separationProgress = progressUpdate.progress
+                                        separationStep = progressUpdate.step
+                                        separationLog = progressUpdate.logLine
+                                    }
+                                }
+                                val cachedStems = StemCacheManager.cacheStems(decodedWavFile, separationMethod, separation, cacheDir)
+
+                                val customSong = Song(
+                                    id = "custom_${System.currentTimeMillis()}",
+                                    title = customTitle,
+                                    artist = "Moises-Light Separated Audio",
+                                    assetPath = null,
+                                    durationMs = duration,
+                                    lyrics = listOf(
+                                        LyricLine(0L, duration / 3, "🎵 Custom Moises-Light Song Loaded! 🎵"),
+                                        LyricLine(duration / 3, 2 * duration / 3, "🤖 Vocal Separation Moises-Light model complete! 🤖"),
+                                        LyricLine(2 * duration / 3, duration, "✨ Enjoy singing along! ✨"
+                                        )
+                                    ),
+                                    isCustom = true,
+                                    customFile = decodedWavFile,
+                                    instrumentalFile = cachedStems.instrumentalFile,
+                                    vocalFile = cachedStems.vocalFile
+                                )
+
+                                Handler(Looper.getMainLooper()).post {
+                                    isSeparating = false
+                                    onAddCustomSong(customSong)
+                                    Toast.makeText(context, "Successfully separated vocals using Moises-Light model!", Toast.LENGTH_LONG).show()
+                                }
+                            } else if (separationMethod == "Meta Demucs Model") {
+                                // Demucs vocal separation
+                                val separation = DemucsVocalSeparator.separateWithDemucs(decodedWavFile, outputDir) { progressUpdate ->
+                                    Handler(Looper.getMainLooper()).post {
+                                        separationProgress = progressUpdate.progress
+                                        separationStep = progressUpdate.step
+                                        separationLog = progressUpdate.logLine
+                                    }
+                                }
+                                val cachedStems = StemCacheManager.cacheStems(decodedWavFile, separationMethod, separation, cacheDir)
+
+                                val customSong = Song(
+                                    id = "custom_${System.currentTimeMillis()}",
+                                    title = customTitle,
+                                    artist = "Demucs Separated Audio",
+                                    assetPath = null,
+                                    durationMs = duration,
+                                    lyrics = listOf(
+                                        LyricLine(0L, duration / 3, "🎵 Custom Demucs Song Loaded! 🎵"),
+                                        LyricLine(duration / 3, 2 * duration / 3, "🤖 Vocal Separation Meta Demucs model complete! 🤖"),
+                                        LyricLine(2 * duration / 3, duration, "✨ Enjoy singing along! ✨")
+                                    ),
+                                    isCustom = true,
+                                    customFile = decodedWavFile,
+                                    instrumentalFile = cachedStems.instrumentalFile,
+                                    vocalFile = cachedStems.vocalFile
+                                )
+
+                                Handler(Looper.getMainLooper()).post {
+                                    isSeparating = false
+                                    onAddCustomSong(customSong)
+                                    Toast.makeText(context, "Successfully separated vocals using Demucs model!", Toast.LENGTH_LONG).show()
+                                }
+                            } else if (separationMethod == "ONNX Real Model Scaffold") {
+                                // ONNX Vocal separation scaffold
+                                val onnxSeparator = OnnxAudioSeparator("ONNX Model", "models/htdemucs_vocals.onnx")
+                                val separation = onnxSeparator.separate(decodedWavFile, outputDir) { progressUpdate ->
+                                    Handler(Looper.getMainLooper()).post {
+                                        separationProgress = progressUpdate.progress
+                                        separationStep = progressUpdate.step
+                                        separationLog = progressUpdate.logLine
+                                    }
+                                }
+                                val cachedStems = StemCacheManager.cacheStems(decodedWavFile, separationMethod, separation, cacheDir)
+
+                                val customSong = Song(
+                                    id = "custom_${System.currentTimeMillis()}",
+                                    title = customTitle,
+                                    artist = "ONNX Scaffold Separated Audio",
+                                    assetPath = null,
+                                    durationMs = duration,
+                                    lyrics = listOf(
+                                        LyricLine(0L, duration / 3, "🎵 Custom ONNX Song Loaded! 🎵"),
+                                        LyricLine(duration / 3, 2 * duration / 3, "🤖 ONNX real-model inference pipeline complete! 🤖"),
+                                        LyricLine(2 * duration / 3, duration, "✨ Enjoy singing along! ✨")
+                                    ),
+                                    isCustom = true,
+                                    customFile = decodedWavFile,
+                                    instrumentalFile = cachedStems.instrumentalFile,
+                                    vocalFile = cachedStems.vocalFile
+                                )
+
+                                Handler(Looper.getMainLooper()).post {
+                                    isSeparating = false
+                                    onAddCustomSong(customSong)
+                                    Toast.makeText(context, "Successfully separated vocals using ONNX pipeline!", Toast.LENGTH_LONG).show()
+                                }
+                            } else {
+                                // Traditional DSP separation
+                                Handler(Looper.getMainLooper()).post {
+                                    separationProgress = 0.5f
+                                    separationStep = "Traditional DSP"
+                                    separationLog = "Applying channel cancellation (L - R) / vocal extraction ((L+R)/2)..."
+                                }
+
+                                val separation = VocalSeparator.separate(decodedWavFile, outputDir)
+                                val cachedStems = StemCacheManager.cacheStems(decodedWavFile, separationMethod, separation, cacheDir)
+
+                                val customSong = Song(
+                                    id = "custom_${System.currentTimeMillis()}",
+                                    title = customTitle,
+                                    artist = "DSP Separated Audio",
+                                    assetPath = null,
+                                    durationMs = duration,
+                                    lyrics = listOf(
+                                        LyricLine(0L, duration / 3, "🎵 Custom DSP Song Loaded! 🎵"),
+                                        LyricLine(duration / 3, 2 * duration / 3, "🎤 Vocal Separation DSP complete! 🎤"),
+                                        LyricLine(2 * duration / 3, duration, "✨ Sing with separated backing track! ✨")
+                                    ),
+                                    isCustom = true,
+                                    customFile = decodedWavFile,
+                                    instrumentalFile = cachedStems.instrumentalFile,
+                                    vocalFile = cachedStems.vocalFile
+                                )
+
+                                Handler(Looper.getMainLooper()).post {
+                                    isSeparating = false
+                                    onAddCustomSong(customSong)
+                                    Toast.makeText(context, "Successfully separated vocals using DSP algorithm!", Toast.LENGTH_LONG).show()
+                                }
                             }
                         }
 
@@ -673,11 +752,12 @@ fun KaraokeAppScreen(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceEvenly
                     ) {
-                        listOf("BS-RoFormer", "Moises-Light", "Meta Demucs", "Traditional DSP").forEach { method ->
+                        listOf("BS-RoFormer", "Moises-Light", "Meta Demucs", "ONNX Model", "Traditional DSP").forEach { method ->
                             val displayMethod = when (method) {
                                 "BS-RoFormer" -> "BS-RoFormer Model"
                                 "Moises-Light" -> "Moises-Light Model"
                                 "Meta Demucs" -> "Meta Demucs Model"
+                                "ONNX Model" -> "ONNX Real Model Scaffold"
                                 else -> "Traditional DSP"
                             }
                             OutlinedButton(
