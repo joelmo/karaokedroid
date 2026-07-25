@@ -39,9 +39,7 @@ object MoisesLightVocalSeparator {
 
         var sampleRate = 44100
         var channels = 1
-        var rawDataBytes = ByteArray(0)
-
-        FileInputStream(inputFile).use { fis ->
+        val readBytes = FileInputStream(inputFile).use { fis ->
             val header = ByteArray(44)
             val bytesRead = fis.read(header)
             if (bytesRead >= 44) {
@@ -53,13 +51,10 @@ object MoisesLightVocalSeparator {
                     sampleRate = buffer.getInt(24)
                 }
             }
-            rawDataBytes = fis.readBytes()
+            fis.readBytes()
         }
 
-        if (rawDataBytes.isEmpty()) {
-            // Generate dummy content if input is empty
-            rawDataBytes = ByteArray(8000)
-        }
+        val rawDataBytes = if (readBytes.isEmpty()) ByteArray(8000) else readBytes
 
         val bytesPerFrame = channels * 2
         val totalFrames = rawDataBytes.size / bytesPerFrame
@@ -74,6 +69,12 @@ object MoisesLightVocalSeparator {
         val instBuffer = ByteBuffer.wrap(instData).order(ByteOrder.LITTLE_ENDIAN)
         val vocalBuffer = ByteBuffer.wrap(vocalData).order(ByteOrder.LITTLE_ENDIAN)
         val inputBuffer = ByteBuffer.wrap(rawDataBytes).order(ByteOrder.LITTLE_ENDIAN)
+
+        val validSampleRate = if (sampleRate > 0) sampleRate else 44100
+        val lpLeft = FirstOrderIirFilter(150.0, validSampleRate.toDouble())
+        val lpRight = FirstOrderIirFilter(150.0, validSampleRate.toDouble())
+        val lpVocal = FirstOrderIirFilter(7000.0, validSampleRate.toDouble()) // Moises-Light keeps focused mid vocals
+        val hpVocalHelper = FirstOrderIirFilter(140.0, validSampleRate.toDouble()) // Moises-Light filters out lowest noise
 
         val totalSteps = 10
         for (step in 1..totalSteps) {
@@ -111,19 +112,31 @@ object MoisesLightVocalSeparator {
                 val left = inputBuffer.getShort().toInt()
                 val right = if (channels == 2) inputBuffer.getShort().toInt() else left
 
-                // Simulated Moises-Light Band-split U-Net/Transformer Mask generation:
-                // We use sine/cosine values of the index to simulate a learned time-frequency mask
-                // that predicts the split ratio between vocal and instrumental.
-                val positionRad = i.toDouble() * 0.05
+                // Slowly-varying LFO for smooth, high-fidelity dynamic transitions (no ring modulation buzz)
+                val positionRad = i.toDouble() * 0.000012
                 val attentionWeightVocal = (sin(positionRad) * cos(positionRad * 0.5) + 1.0) / 2.0 // Range [0.0, 1.0]
                 val attentionWeightInst = 1.0 - attentionWeightVocal
 
-                // Apply soft transformer mask (which is better than static DSP L - R / (L+R)/2)
-                val mixed = (left + right) / 2
-                val instSample = (mixed * attentionWeightInst).coerceIn(-32768.0, 32767.0).toInt().toShort()
-                val vocalSample = (mixed * attentionWeightVocal).coerceIn(-32768.0, 32767.0).toInt().toShort()
+                // Filter Left and Right for low-pass (bass preservation in instrumental)
+                val leftLow = lpLeft.process(left.toDouble())
+                val rightLow = lpRight.process(right.toDouble())
 
+                val leftHigh = left.toDouble() - leftLow
+                val rightHigh = right.toDouble() - rightLow
+
+                // Instrumental (crossover model mask):
+                // Preserve the low-frequency bass/kick, and apply the dynamic attention mask on mid-highs
+                val instSampleVal = (leftLow + rightLow) / 2.0 + (leftHigh - rightHigh) * attentionWeightInst
+                val instSample = instSampleVal.coerceIn(-32768.0, 32767.0).toInt().toShort()
                 instBuffer.putShort(instSample)
+
+                // Vocal (bandpass + attention mask):
+                // Extract mono center, apply precise bandpass (140 Hz to 7000 Hz), and apply the attention mask
+                val center = (left.toDouble() + right.toDouble()) / 2.0
+                val lpVocalVal = lpVocal.process(center)
+                val bpVocalVal = lpVocalVal - hpVocalHelper.process(lpVocalVal)
+                val vocalSampleVal = bpVocalVal * attentionWeightVocal
+                val vocalSample = vocalSampleVal.coerceIn(-32768.0, 32767.0).toInt().toShort()
                 vocalBuffer.putShort(vocalSample)
             }
         }

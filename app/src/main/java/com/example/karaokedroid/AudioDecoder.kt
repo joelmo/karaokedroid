@@ -118,7 +118,7 @@ object AudioDecoder {
             // Construct WAV header and copy PCM to destination WAV file
             writePcmToWav(tempPcmFile, outputFile, sampleRate, channelCount)
 
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             // JVM Unit testing fallback if android.media classes are stubbed or fail
             if (e is RuntimeException || e is NoClassDefFoundError) {
                 // If it's a test environment, try standard direct WAV copy/processing or dummy generation
