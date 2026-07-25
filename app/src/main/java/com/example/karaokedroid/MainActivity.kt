@@ -294,7 +294,7 @@ fun KaraokeAppScreen(
     // Custom song track playback toggle: "Full Mix", "Instrumental", "Vocals Only"
     var selectedTrackType by remember { mutableStateOf("Instrumental") }
 
-    // Method selector: "Traditional DSP", "Meta Demucs Model", or "Moises-Light Model"
+    // Method selector: "Traditional DSP", "Meta Demucs Model", "Moises-Light Model", or "BS-RoFormer Model"
     var separationMethod by remember { mutableStateOf("Moises-Light Model") }
 
     // Separation progress state
@@ -380,7 +380,39 @@ fun KaraokeAppScreen(
 
                         val customTitle = "Loaded Audio (${decodedWavFile.nameWithoutExtension.takeLast(6)})"
 
-                        if (separationMethod == "Moises-Light Model") {
+                        if (separationMethod == "BS-RoFormer Model") {
+                            // BS-RoFormer vocal separation
+                            val separation = BsRoFormerVocalSeparator.separateWithBsRoFormer(decodedWavFile, outputDir) { progressUpdate ->
+                                Handler(Looper.getMainLooper()).post {
+                                    separationProgress = progressUpdate.progress
+                                    separationStep = progressUpdate.step
+                                    separationLog = progressUpdate.logLine
+                                }
+                            }
+
+                            val customSong = Song(
+                                id = "custom_${System.currentTimeMillis()}",
+                                title = customTitle,
+                                artist = "BS-RoFormer Separated Audio",
+                                assetPath = null,
+                                durationMs = duration,
+                                lyrics = listOf(
+                                    LyricLine(0L, duration / 3, "🎵 Custom BS-RoFormer Song Loaded! 🎵"),
+                                    LyricLine(duration / 3, 2 * duration / 3, "🤖 Vocal Separation BS-RoFormer model complete! 🤖"),
+                                    LyricLine(2 * duration / 3, duration, "✨ Enjoy singing along! ✨")
+                                ),
+                                isCustom = true,
+                                customFile = decodedWavFile,
+                                instrumentalFile = separation.instrumentalFile,
+                                vocalFile = separation.vocalFile
+                            )
+
+                            Handler(Looper.getMainLooper()).post {
+                                isSeparating = false
+                                onAddCustomSong(customSong)
+                                Toast.makeText(context, "Successfully separated vocals using BS-RoFormer model!", Toast.LENGTH_LONG).show()
+                            }
+                        } else if (separationMethod == "Moises-Light Model") {
                             // Moises-Light vocal separation
                             val separation = MoisesLightVocalSeparator.separateWithMoisesLight(decodedWavFile, outputDir) { progressUpdate ->
                                 Handler(Looper.getMainLooper()).post {
@@ -641,8 +673,9 @@ fun KaraokeAppScreen(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceEvenly
                     ) {
-                        listOf("Moises-Light", "Meta Demucs", "Traditional DSP").forEach { method ->
+                        listOf("BS-RoFormer", "Moises-Light", "Meta Demucs", "Traditional DSP").forEach { method ->
                             val displayMethod = when (method) {
+                                "BS-RoFormer" -> "BS-RoFormer Model"
                                 "Moises-Light" -> "Moises-Light Model"
                                 "Meta Demucs" -> "Meta Demucs Model"
                                 else -> "Traditional DSP"
@@ -652,12 +685,12 @@ fun KaraokeAppScreen(
                                 colors = ButtonDefaults.outlinedButtonColors(
                                     containerColor = if (separationMethod == displayMethod) MaterialTheme.colorScheme.secondary else Color.Transparent
                                 ),
-                                modifier = Modifier.weight(1f).padding(horizontal = 2.dp),
-                                contentPadding = PaddingValues(4.dp)
+                                modifier = Modifier.weight(1f).padding(horizontal = 1.dp),
+                                contentPadding = PaddingValues(2.dp)
                             ) {
                                 Text(
                                     text = method,
-                                    fontSize = 11.sp,
+                                    fontSize = 10.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = if (separationMethod == displayMethod) Color.Black else Color.LightGray
                                 )
