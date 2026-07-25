@@ -35,10 +35,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
 import androidx.core.content.ContextCompat
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.*
+import kotlin.concurrent.thread
 
 fun formatTime(ms: Long): String {
     val sec = (ms / 1000) % 60
@@ -292,6 +294,15 @@ fun KaraokeAppScreen(
     // Custom song track playback toggle: "Full Mix", "Instrumental", "Vocals Only"
     var selectedTrackType by remember { mutableStateOf("Instrumental") }
 
+    // Method selector: "Traditional DSP" or "LLM Transformer Model"
+    var separationMethod by remember { mutableStateOf("LLM Transformer Model") }
+
+    // LLM Separation progress state
+    var isSeparating by remember { mutableStateOf(false) }
+    var separationProgress by remember { mutableStateOf(0.0f) }
+    var separationStep by remember { mutableStateOf("") }
+    var separationLog by remember { mutableStateOf("") }
+
     val lyricsListState = rememberLazyListState()
 
     fun refreshRecordings() {
@@ -321,57 +332,127 @@ fun KaraokeAppScreen(
         }
     )
 
-    // WAV File Picker Launcher
+    // Audio File Picker Launcher (Supports any sound file - MP3, WAV, M4A, AAC, FLAC, etc.)
     val filePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent(),
         onResult = { uri: Uri? ->
             if (uri != null) {
-                try {
-                    val outputDir = context.getExternalFilesDir(null) ?: context.filesDir
-                    val tempCustomFile = File(outputDir, "custom_song_input_${System.currentTimeMillis()}.wav")
+                thread {
+                    try {
+                        val outputDir = context.getExternalFilesDir(null) ?: context.filesDir
+                        val tempInputFile = File(outputDir, "custom_song_input_${System.currentTimeMillis()}")
 
-                    // Copy Uri content to File
-                    context.contentResolver.openInputStream(uri).use { input ->
-                        tempCustomFile.outputStream().use { output ->
-                            input?.copyTo(output)
+                        Handler(Looper.getMainLooper()).post {
+                            isSeparating = true
+                            separationProgress = 0.02f
+                            separationStep = "Importing File"
+                            separationLog = "Copying chosen sound file..."
+                        }
+
+                        // Copy Uri content to temp input File
+                        context.contentResolver.openInputStream(uri).use { input ->
+                            tempInputFile.outputStream().use { output ->
+                                input?.copyTo(output)
+                            }
+                        }
+
+                        Handler(Looper.getMainLooper()).post {
+                            separationProgress = 0.05f
+                            separationStep = "Audio Decoding"
+                            separationLog = "Decoding arbitrary sound format to linear 16-bit PCM WAV using AudioDecoder..."
+                        }
+
+                        // Standardize file to WAV format using AudioDecoder
+                        val decodedWavFile = File(outputDir, "decoded_${System.currentTimeMillis()}.wav")
+                        AudioDecoder.decodeToWav(context, Uri.fromFile(tempInputFile), decodedWavFile)
+
+                        // Retrieve duration via retriever
+                        val retriever = MediaMetadataRetriever()
+                        retriever.setDataSource(decodedWavFile.absolutePath)
+                        val durationStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
+                        val duration = durationStr?.toLong() ?: 15000L
+                        retriever.release()
+
+                        // Delete temp un-decoded file
+                        if (tempInputFile.exists()) {
+                            tempInputFile.delete()
+                        }
+
+                        val customTitle = "Loaded Audio (${decodedWavFile.nameWithoutExtension.takeLast(6)})"
+
+                        if (separationMethod == "LLM Transformer Model") {
+                            // LLM vocal separation
+                            val separation = LlmVocalSeparator.separateWithLlm(decodedWavFile, outputDir) { progressUpdate ->
+                                Handler(Looper.getMainLooper()).post {
+                                    separationProgress = progressUpdate.progress
+                                    separationStep = progressUpdate.step
+                                    separationLog = progressUpdate.logLine
+                                }
+                            }
+
+                            val customSong = Song(
+                                id = "custom_${System.currentTimeMillis()}",
+                                title = customTitle,
+                                artist = "LLM Separated Audio",
+                                assetPath = null,
+                                durationMs = duration,
+                                lyrics = listOf(
+                                    LyricLine(0L, duration / 3, "🎵 Custom LLM Song Loaded! 🎵"),
+                                    LyricLine(duration / 3, 2 * duration / 3, "🤖 Vocal Separation LLM model complete! 🤖"),
+                                    LyricLine(2 * duration / 3, duration, "✨ Enjoy singing along! ✨")
+                                ),
+                                isCustom = true,
+                                customFile = decodedWavFile,
+                                instrumentalFile = separation.instrumentalFile,
+                                vocalFile = separation.vocalFile
+                            )
+
+                            Handler(Looper.getMainLooper()).post {
+                                isSeparating = false
+                                onAddCustomSong(customSong)
+                                Toast.makeText(context, "Successfully separated vocals using LLM model!", Toast.LENGTH_LONG).show()
+                            }
+                        } else {
+                            // Traditional DSP separation
+                            Handler(Looper.getMainLooper()).post {
+                                separationProgress = 0.5f
+                                separationStep = "Traditional DSP"
+                                separationLog = "Applying channel cancellation (L - R) / vocal extraction ((L+R)/2)..."
+                            }
+
+                            val separation = VocalSeparator.separate(decodedWavFile, outputDir)
+
+                            val customSong = Song(
+                                id = "custom_${System.currentTimeMillis()}",
+                                title = customTitle,
+                                artist = "DSP Separated Audio",
+                                assetPath = null,
+                                durationMs = duration,
+                                lyrics = listOf(
+                                    LyricLine(0L, duration / 3, "🎵 Custom DSP Song Loaded! 🎵"),
+                                    LyricLine(duration / 3, 2 * duration / 3, "🎤 Vocal Separation DSP complete! 🎤"),
+                                    LyricLine(2 * duration / 3, duration, "✨ Sing with separated backing track! ✨")
+                                ),
+                                isCustom = true,
+                                customFile = decodedWavFile,
+                                instrumentalFile = separation.instrumentalFile,
+                                vocalFile = separation.vocalFile
+                            )
+
+                            Handler(Looper.getMainLooper()).post {
+                                isSeparating = false
+                                onAddCustomSong(customSong)
+                                Toast.makeText(context, "Successfully separated vocals using DSP algorithm!", Toast.LENGTH_LONG).show()
+                            }
+                        }
+
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                        Handler(Looper.getMainLooper()).post {
+                            isSeparating = false
+                            Toast.makeText(context, "Error processing audio: ${e.message}", Toast.LENGTH_LONG).show()
                         }
                     }
-
-                    Toast.makeText(context, "Splitting vocals off your WAV file... Please wait!", Toast.LENGTH_LONG).show()
-
-                    // Perform DSP Vocal Separation
-                    val separation = VocalSeparator.separate(tempCustomFile, outputDir)
-
-                    // Retrieve duration via retriever
-                    val retriever = MediaMetadataRetriever()
-                    retriever.setDataSource(tempCustomFile.absolutePath)
-                    val durationStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
-                    val duration = durationStr?.toLong() ?: 15000L
-                    retriever.release()
-
-                    val customTitle = "Custom WAV Song (${tempCustomFile.nameWithoutExtension.takeLast(6)})"
-                    val customSong = Song(
-                        id = "custom_${System.currentTimeMillis()}",
-                        title = customTitle,
-                        artist = "User Selected WAV",
-                        assetPath = null,
-                        durationMs = duration,
-                        lyrics = listOf(
-                            LyricLine(0L, duration / 3, "🎵 Custom WAV Song Loaded! 🎵"),
-                            LyricLine(duration / 3, 2 * duration / 3, "🎤 Vocal Separation DSP complete! 🎤"),
-                            LyricLine(2 * duration / 3, duration, "✨ Sing with separated backing track! ✨")
-                        ),
-                        isCustom = true,
-                        customFile = tempCustomFile,
-                        instrumentalFile = separation.instrumentalFile,
-                        vocalFile = separation.vocalFile
-                    )
-
-                    onAddCustomSong(customSong)
-                    Toast.makeText(context, "Successfully separated vocals and added song!", Toast.LENGTH_LONG).show()
-                } catch (e: Exception) {
-                    e.printStackTrace()
-                    Toast.makeText(context, "Error processing WAV file: ${e.message}", Toast.LENGTH_LONG).show()
                 }
             }
         }
@@ -411,6 +492,76 @@ fun KaraokeAppScreen(
         }
     }
 
+    // LLM Separation Progress Dialog
+    if (isSeparating) {
+        Dialog(onDismissRequest = {}) {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                shape = RoundedCornerShape(16.dp)
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text(
+                        text = "Vocal Separator AI",
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(bottom = 8.dp)
+                    )
+
+                    CircularProgressIndicator(
+                        progress = separationProgress,
+                        color = MaterialTheme.colorScheme.secondary,
+                        modifier = Modifier
+                            .size(80.dp)
+                            .padding(12.dp)
+                    )
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Text(
+                        text = "Step: $separationStep",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color.White
+                    )
+
+                    Text(
+                        text = "${(separationProgress * 100).toInt()}% completed",
+                        fontSize = 14.sp,
+                        color = MaterialTheme.colorScheme.secondary,
+                        modifier = Modifier.padding(top = 4.dp)
+                    )
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(100.dp)
+                            .background(Color.Black, shape = RoundedCornerShape(8.dp))
+                            .padding(8.dp)
+                    ) {
+                        Text(
+                            text = separationLog,
+                            color = Color.Green,
+                            fontSize = 12.sp,
+                            textAlign = TextAlign.Start,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
+                }
+            }
+        }
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -435,6 +586,50 @@ fun KaraokeAppScreen(
         )
 
         if (selectedSong == null) {
+            // Method selection UI
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 8.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(12.dp)
+                ) {
+                    Text(
+                        text = "Select Vocal Extraction Model:",
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color.White,
+                        modifier = Modifier.padding(bottom = 6.dp)
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceEvenly
+                    ) {
+                        listOf("LLM Transformer Model", "Traditional DSP").forEach { method ->
+                            OutlinedButton(
+                                onClick = { separationMethod = method },
+                                colors = ButtonDefaults.outlinedButtonColors(
+                                    containerColor = if (separationMethod == method) MaterialTheme.colorScheme.secondary else Color.Transparent
+                                ),
+                                modifier = Modifier.weight(1f).padding(horizontal = 4.dp),
+                                contentPadding = PaddingValues(6.dp)
+                            ) {
+                                Text(
+                                    text = method,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (separationMethod == method) Color.Black else Color.LightGray
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -447,12 +642,12 @@ fun KaraokeAppScreen(
                     modifier = Modifier.padding(vertical = 8.dp)
                 )
 
-                // Load custom WAV file button
+                // Load custom Audio file button (supports any audio file)
                 Button(
-                    onClick = { filePickerLauncher.launch("audio/wav") },
+                    onClick = { filePickerLauncher.launch("audio/*") },
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)
                 ) {
-                    Text("Load WAV 📂", color = Color.Black, fontSize = 12.sp)
+                    Text("Load Audio 📂", color = Color.Black, fontSize = 12.sp)
                 }
             }
 
