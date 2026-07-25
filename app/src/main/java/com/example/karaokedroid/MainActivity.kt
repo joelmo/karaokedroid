@@ -294,10 +294,10 @@ fun KaraokeAppScreen(
     // Custom song track playback toggle: "Full Mix", "Instrumental", "Vocals Only"
     var selectedTrackType by remember { mutableStateOf("Instrumental") }
 
-    // Method selector: "Traditional DSP" or "Meta Demucs Model"
-    var separationMethod by remember { mutableStateOf("Meta Demucs Model") }
+    // Method selector: "Traditional DSP", "Meta Demucs Model", or "Moises-Light Model"
+    var separationMethod by remember { mutableStateOf("Moises-Light Model") }
 
-    // Demucs Separation progress state
+    // Separation progress state
     var isSeparating by remember { mutableStateOf(false) }
     var separationProgress by remember { mutableStateOf(0.0f) }
     var separationStep by remember { mutableStateOf("") }
@@ -380,7 +380,39 @@ fun KaraokeAppScreen(
 
                         val customTitle = "Loaded Audio (${decodedWavFile.nameWithoutExtension.takeLast(6)})"
 
-                        if (separationMethod == "Meta Demucs Model") {
+                        if (separationMethod == "Moises-Light Model") {
+                            // Moises-Light vocal separation
+                            val separation = MoisesLightVocalSeparator.separateWithMoisesLight(decodedWavFile, outputDir) { progressUpdate ->
+                                Handler(Looper.getMainLooper()).post {
+                                    separationProgress = progressUpdate.progress
+                                    separationStep = progressUpdate.step
+                                    separationLog = progressUpdate.logLine
+                                }
+                            }
+
+                            val customSong = Song(
+                                id = "custom_${System.currentTimeMillis()}",
+                                title = customTitle,
+                                artist = "Moises-Light Separated Audio",
+                                assetPath = null,
+                                durationMs = duration,
+                                lyrics = listOf(
+                                    LyricLine(0L, duration / 3, "🎵 Custom Moises-Light Song Loaded! 🎵"),
+                                    LyricLine(duration / 3, 2 * duration / 3, "🤖 Vocal Separation Moises-Light model complete! 🤖"),
+                                    LyricLine(2 * duration / 3, duration, "✨ Enjoy singing along! ✨")
+                                ),
+                                isCustom = true,
+                                customFile = decodedWavFile,
+                                instrumentalFile = separation.instrumentalFile,
+                                vocalFile = separation.vocalFile
+                            )
+
+                            Handler(Looper.getMainLooper()).post {
+                                isSeparating = false
+                                onAddCustomSong(customSong)
+                                Toast.makeText(context, "Successfully separated vocals using Moises-Light model!", Toast.LENGTH_LONG).show()
+                            }
+                        } else if (separationMethod == "Meta Demucs Model") {
                             // Demucs vocal separation
                             val separation = DemucsVocalSeparator.separateWithDemucs(decodedWavFile, outputDir) { progressUpdate ->
                                 Handler(Looper.getMainLooper()).post {
@@ -609,20 +641,25 @@ fun KaraokeAppScreen(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceEvenly
                     ) {
-                        listOf("Meta Demucs Model", "Traditional DSP").forEach { method ->
+                        listOf("Moises-Light", "Meta Demucs", "Traditional DSP").forEach { method ->
+                            val displayMethod = when (method) {
+                                "Moises-Light" -> "Moises-Light Model"
+                                "Meta Demucs" -> "Meta Demucs Model"
+                                else -> "Traditional DSP"
+                            }
                             OutlinedButton(
-                                onClick = { separationMethod = method },
+                                onClick = { separationMethod = displayMethod },
                                 colors = ButtonDefaults.outlinedButtonColors(
-                                    containerColor = if (separationMethod == method) MaterialTheme.colorScheme.secondary else Color.Transparent
+                                    containerColor = if (separationMethod == displayMethod) MaterialTheme.colorScheme.secondary else Color.Transparent
                                 ),
-                                modifier = Modifier.weight(1f).padding(horizontal = 4.dp),
-                                contentPadding = PaddingValues(6.dp)
+                                modifier = Modifier.weight(1f).padding(horizontal = 2.dp),
+                                contentPadding = PaddingValues(4.dp)
                             ) {
                                 Text(
                                     text = method,
-                                    fontSize = 12.sp,
+                                    fontSize = 11.sp,
                                     fontWeight = FontWeight.Bold,
-                                    color = if (separationMethod == method) Color.Black else Color.LightGray
+                                    color = if (separationMethod == displayMethod) Color.Black else Color.LightGray
                                 )
                             }
                         }
