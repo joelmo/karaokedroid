@@ -16,7 +16,7 @@ import java.io.FileOutputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
-class LlmVocalSeparatorTest {
+class DemucsVocalSeparatorTest {
 
     @Rule
     @JvmField
@@ -53,7 +53,7 @@ class LlmVocalSeparatorTest {
     }
 
     @Test
-    fun testLlmVocalSeparatorCorrectness() {
+    fun testDemucsVocalSeparatorCorrectness() {
         // Create standard WAV file to separate
         val inputFile = tempFolder.newFile("input_standard.wav")
         val sampleRate = 8000
@@ -85,17 +85,17 @@ class LlmVocalSeparatorTest {
             fos.write(samples.array())
         }
 
-        val outputDir = tempFolder.newFolder("llm_out")
-        val updates = mutableListOf<LlmVocalSeparator.ProgressUpdate>()
+        val outputDir = tempFolder.newFolder("demucs_out")
+        val updates = mutableListOf<DemucsVocalSeparator.ProgressUpdate>()
 
-        val separationResult = LlmVocalSeparator.separateWithLlm(inputFile, outputDir) { progress ->
+        val separationResult = DemucsVocalSeparator.separateWithDemucs(inputFile, outputDir) { progress ->
             updates.add(progress)
         }
 
         assertTrue(separationResult.instrumentalFile.exists())
         assertTrue(separationResult.vocalFile.exists())
 
-        // Ensure we received progress updates and logs from the LLM model
+        // Ensure we received progress updates and logs from the Demucs model
         assertTrue(updates.isNotEmpty())
         assertEquals("Initializing", updates.first().step)
         assertEquals("Completed", updates.last().step)

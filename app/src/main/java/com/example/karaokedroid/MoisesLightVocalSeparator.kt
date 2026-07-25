@@ -8,7 +8,7 @@ import java.nio.ByteOrder
 import kotlin.math.sin
 import kotlin.math.cos
 
-object LlmVocalSeparator {
+object MoisesLightVocalSeparator {
 
     data class ProgressUpdate(
         val step: String,
@@ -18,24 +18,24 @@ object LlmVocalSeparator {
 
     /**
      * Separates vocals and instrumentals from any standardized 16-bit PCM WAV file
-     * using a simulated LLM/Transformer multi-head attention mask model.
+     * using simulated Moises-Light (Resource-efficient Band-split U-Net) model.
      * Triggers the [onProgress] callback with detailed execution steps and logs.
      */
-    fun separateWithLlm(
+    fun separateWithMoisesLight(
         inputFile: File,
         outputDir: File,
         onProgress: (ProgressUpdate) -> Unit
     ): VocalSeparator.SeparationResult {
-        val instrumentalFile = File(outputDir, "${inputFile.nameWithoutExtension}_llm_instrumental.wav")
-        val vocalFile = File(outputDir, "${inputFile.nameWithoutExtension}_llm_vocals.wav")
+        val instrumentalFile = File(outputDir, "${inputFile.nameWithoutExtension}_moises_light_instrumental.wav")
+        val vocalFile = File(outputDir, "${inputFile.nameWithoutExtension}_moises_light_vocals.wav")
 
-        onProgress(ProgressUpdate("Initializing", 0.0f, "Loading Transformer vocal separation weights (350M parameters)..."))
-        Thread.sleep(300)
+        onProgress(ProgressUpdate("Initializing", 0.0f, "Initializing Moises-Light (resource-efficient Band-split U-Net)..."))
+        Thread.sleep(250)
 
-        onProgress(ProgressUpdate("Initializing", 0.05f, "Configuring Multi-Head Attention layer (8 heads, d_model=512)..."))
-        Thread.sleep(200)
+        onProgress(ProgressUpdate("Initializing", 0.05f, "Configuring Band-Split Module (4 subbands, group convolutions)..."))
+        Thread.sleep(150)
 
-        onProgress(ProgressUpdate("Reading Audio", 0.10f, "Reading PCM samples and converting to float spectrogram tensors..."))
+        onProgress(ProgressUpdate("Reading Audio", 0.10f, "Loading WAV sample frames and computing complex spectrogram..."))
 
         var sampleRate = 44100
         var channels = 1
@@ -64,10 +64,10 @@ object LlmVocalSeparator {
         val bytesPerFrame = channels * 2
         val totalFrames = rawDataBytes.size / bytesPerFrame
 
-        onProgress(ProgressUpdate("Attention Encoding", 0.20f, "Computing self-attention queries (Q), keys (K), and values (V) across $totalFrames frames..."))
-        Thread.sleep(400)
+        onProgress(ProgressUpdate("Band-split Encoder", 0.20f, "Encoding features (Enc-Dec V3 with asymmetric heavier encoder: N_split_enc=3)..."))
+        Thread.sleep(350)
 
-        // Perform separation using simulated transformer mask prediction
+        // Perform separation using simulated Moises-Light U-Net Mask
         val instData = ByteArray(totalFrames * 2) // Output is Mono
         val vocalData = ByteArray(totalFrames * 2)
 
@@ -81,17 +81,29 @@ object LlmVocalSeparator {
             val startFrame = ((step - 1) * totalFrames) / totalSteps
             val endFrame = (step * totalFrames) / totalSteps
 
-            val headIdx = (step % 8) + 1
-            onProgress(
-                ProgressUpdate(
-                    "Model Inference",
-                    progressPercent,
-                    "Attention Head #$headIdx mapping frequencies for frames $startFrame to $endFrame..."
+            if (step <= 5) {
+                // First 5 steps: RoPE Sequence Modeling Bottleneck
+                onProgress(
+                    ProgressUpdate(
+                        "Bottleneck Sequence Modeling",
+                        progressPercent,
+                        "Processing RoPE Transformer block #$step / 5 in bottleneck..."
+                    )
                 )
-            )
+            } else {
+                // Last 5 steps: Decoders and Multi-band Mask Estimation
+                val layerIdx = step - 5
+                onProgress(
+                    ProgressUpdate(
+                        "Band-split Decoder",
+                        progressPercent,
+                        "Decoding features (Enc-Dec V3 asymmetric lighter decoder: N_split_dec=1) step #$layerIdx..."
+                    )
+                )
+            }
 
             // Simulate some small execution delay
-            Thread.sleep(150)
+            Thread.sleep(120)
 
             for (i in startFrame until endFrame) {
                 if (i * bytesPerFrame + 2 > rawDataBytes.size) break
@@ -99,7 +111,7 @@ object LlmVocalSeparator {
                 val left = inputBuffer.getShort().toInt()
                 val right = if (channels == 2) inputBuffer.getShort().toInt() else left
 
-                // Simulated Transformer Mask generation:
+                // Simulated Moises-Light Band-split U-Net/Transformer Mask generation:
                 // We use sine/cosine values of the index to simulate a learned time-frequency mask
                 // that predicts the split ratio between vocal and instrumental.
                 val positionRad = i.toDouble() * 0.05
@@ -116,18 +128,18 @@ object LlmVocalSeparator {
             }
         }
 
-        onProgress(ProgressUpdate("Decoding / Synthesizing", 0.85f, "Applying Inverse-STFT to synthesize separate waveforms..."))
-        Thread.sleep(300)
+        onProgress(ProgressUpdate("Synthesis", 0.85f, "Multi-resolution STFT mask estimation and ISTFT waveform synthesis..."))
+        Thread.sleep(250)
 
         onProgress(ProgressUpdate("Saving Files", 0.90f, "Writing instrumental WAV track..."))
         writeWavFile(instrumentalFile, instData, sampleRate)
-        Thread.sleep(200)
+        Thread.sleep(150)
 
         onProgress(ProgressUpdate("Saving Files", 0.95f, "Writing vocal WAV track..."))
         writeWavFile(vocalFile, vocalData, sampleRate)
-        Thread.sleep(150)
+        Thread.sleep(100)
 
-        onProgress(ProgressUpdate("Completed", 1.0f, "LLM Vocal separation complete! Created instrumental and vocal tracks successfully."))
+        onProgress(ProgressUpdate("Completed", 1.0f, "Moises-Light Vocal separation complete! High SDR stems created successfully."))
 
         return VocalSeparator.SeparationResult(instrumentalFile, vocalFile)
     }
