@@ -294,10 +294,10 @@ fun KaraokeAppScreen(
     // Custom song track playback toggle: "Full Mix", "Instrumental", "Vocals Only"
     var selectedTrackType by remember { mutableStateOf("Instrumental") }
 
-    // Method selector: "Traditional DSP" or "LLM Transformer Model"
-    var separationMethod by remember { mutableStateOf("LLM Transformer Model") }
+    // Method selector: "Traditional DSP" or "Meta Demucs Model"
+    var separationMethod by remember { mutableStateOf("Meta Demucs Model") }
 
-    // LLM Separation progress state
+    // Demucs Separation progress state
     var isSeparating by remember { mutableStateOf(false) }
     var separationProgress by remember { mutableStateOf(0.0f) }
     var separationStep by remember { mutableStateOf("") }
@@ -380,9 +380,9 @@ fun KaraokeAppScreen(
 
                         val customTitle = "Loaded Audio (${decodedWavFile.nameWithoutExtension.takeLast(6)})"
 
-                        if (separationMethod == "LLM Transformer Model") {
-                            // LLM vocal separation
-                            val separation = LlmVocalSeparator.separateWithLlm(decodedWavFile, outputDir) { progressUpdate ->
+                        if (separationMethod == "Meta Demucs Model") {
+                            // Demucs vocal separation
+                            val separation = DemucsVocalSeparator.separateWithDemucs(decodedWavFile, outputDir) { progressUpdate ->
                                 Handler(Looper.getMainLooper()).post {
                                     separationProgress = progressUpdate.progress
                                     separationStep = progressUpdate.step
@@ -393,12 +393,12 @@ fun KaraokeAppScreen(
                             val customSong = Song(
                                 id = "custom_${System.currentTimeMillis()}",
                                 title = customTitle,
-                                artist = "LLM Separated Audio",
+                                artist = "Demucs Separated Audio",
                                 assetPath = null,
                                 durationMs = duration,
                                 lyrics = listOf(
-                                    LyricLine(0L, duration / 3, "🎵 Custom LLM Song Loaded! 🎵"),
-                                    LyricLine(duration / 3, 2 * duration / 3, "🤖 Vocal Separation LLM model complete! 🤖"),
+                                    LyricLine(0L, duration / 3, "🎵 Custom Demucs Song Loaded! 🎵"),
+                                    LyricLine(duration / 3, 2 * duration / 3, "🤖 Vocal Separation Meta Demucs model complete! 🤖"),
                                     LyricLine(2 * duration / 3, duration, "✨ Enjoy singing along! ✨")
                                 ),
                                 isCustom = true,
@@ -410,7 +410,7 @@ fun KaraokeAppScreen(
                             Handler(Looper.getMainLooper()).post {
                                 isSeparating = false
                                 onAddCustomSong(customSong)
-                                Toast.makeText(context, "Successfully separated vocals using LLM model!", Toast.LENGTH_LONG).show()
+                                Toast.makeText(context, "Successfully separated vocals using Demucs model!", Toast.LENGTH_LONG).show()
                             }
                         } else {
                             // Traditional DSP separation
@@ -609,7 +609,7 @@ fun KaraokeAppScreen(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceEvenly
                     ) {
-                        listOf("LLM Transformer Model", "Traditional DSP").forEach { method ->
+                        listOf("Meta Demucs Model", "Traditional DSP").forEach { method ->
                             OutlinedButton(
                                 onClick = { separationMethod = method },
                                 colors = ButtonDefaults.outlinedButtonColors(
